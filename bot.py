@@ -1,74 +1,51 @@
-import os
-import logging
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from telegram import Update, ForceReply
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import gspread
 
-# Set up logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Authorize Google Sheets API
+gc = gspread.service_account(filename='path.json')
+sheet = gc.open("MembershipDB").sheet1
 
-# Replace with your Google Sheets API credentials
-SERVICE_ACCOUNT_FILE = 'credentials.json'
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+async def start(update: Update, context):
+    await update.message.reply_text('Welcome! Please provide your membership card number.')
 
-# Replace with your Google Sheets ID and range
-SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'
-RANGE_NAME = 'Members!A:C'  # Adjust as per your sheet structure
+# Function to validate membership
+async def check_membership(update: Update, context):
+    card_number = update.message.text
+    try:
+        # Find the row containing the user's card number
+        records = sheet.get_all_records()
+        for record in records:
+            if str(record['Card Number']) == card_number:
+                tier = record['Tier']
+                main_channel = record['Main Channel']
+                shopping_branch = record['Shopping Branch']
+                private_chat = record['Private Chat']
+                
+                # Send tier-specific links
+                await update.message.reply_text(f"Welcome {record['Name']}! You are a {tier} member.")
+                
+                links_msg = f"Here are your links:\nMain Channel: {main_channel}\n"
+                if tier in ['Gold', 'Supreme']:
+                    links_msg += f"Shopping Branch: {shopping_branch}\n"
+                if tier == 'Supreme':
+                    links_msg += f"Private Chat: {private_chat}"
+                
+                await update.message.reply_text(links_msg)
+                return
+        
+        # If card number not found
+        await update.message.reply_text("Sorry, your membership card number is invalid.")
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")
 
-# Set up Google Sheets API
-def get_member_data():
-    creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    service = build('sheets', 'v4', credentials=creds)
-    sheet = service.spreadsheets()
-    
-    result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
-    values = result.get('values', [])
-    
-    return {row[0]: row[1:] for row in values} if values else {}
+def main():
+    application = Application.builder().token('YOUR_BOT_TOKEN').build()
 
-# Command to start the bot
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text('Welcome! Please enter your membership card number.')
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT, check_membership))
 
-# Command to authenticate membership
-def authenticate(update: Update, context: CallbackContext) -> None:
-    membership_card_number = update.message.text.strip()
-    members_data = get_member_data()
-    
-    if membership_card_number in members_data:
-        membership_tier = members_data[membership_card_number][0]  # Assuming first column is the tier
-        update.message.reply_text(f'Authentication successful! Your membership tier is: {membership_tier}.')
-        navigate_user(update, membership_tier)
-    else:
-        update.message.reply_text('Authentication failed. Please check your membership card number.')
-
-# Function to navigate users based on their membership tier
-def navigate_user(update: Update, membership_tier: str) -> None:
-    if membership_tier.lower() == 'basic':
-        update.message.reply_text('You have access to the main channel and public chats.')
-    elif membership_tier.lower() == 'gold':
-        update.message.reply_text('You have access to the main channel, shopping branch, and public chats.')
-    elif membership_tier.lower() == 'supreme':
-        update.message.reply_text('You have full access to all channels and chats.')
-    else:
-        update.message.reply_text('Unknown membership tier.')
-
-# Main function to run the bot
-def main() -> None:
-    # Replace 'YOUR_TELEGRAM_TOKEN' with your bot's API token
-    updater = Updater("YOUR_TELEGRAM_TOKEN")
-    
-    # Get the dispatcher to register handlers
-    dispatcher = updater.dispatcher
-    
-    # Command handlers
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, authenticate))
-    
-    # Start the Bot
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
