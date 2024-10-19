@@ -40,7 +40,7 @@ async def check_membership(update: Update, context):
         await update.message.reply_text(f"Error: {e}")
 
 def main():
-    application = Application.builder().token('YOUR_BOT_TOKEN').build()
+    application = Application.builder().token('7674881311:AAHbNtFIHCHfdpGc_lehoOP7WJ8r9FMHMo4').build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT, check_membership))
